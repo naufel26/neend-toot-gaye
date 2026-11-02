@@ -1,6 +1,7 @@
 import { Redis } from '@upstash/redis';
 
-const KEY = 'leaderboard';
+// Own key so this game can share an Upstash database with other games (e.g. Tammy Bird uses 'leaderboard')
+const KEY = 'neend-toot-gayi:leaderboard';
 const TOP_N = 10;
 const KEEP_N = 1000; // cap the stored set so it can't grow forever
 const MAX_SCORE = 99999;

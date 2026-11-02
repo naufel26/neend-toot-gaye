@@ -81,7 +81,7 @@ Open http://localhost:5178. Locally the leaderboard keeps scores **in memory**, 
 - Scores must be whole numbers from 1 to 99999.
 - Each name keeps only its highest score (Redis `ZADD GT`). The stored set is capped at 1000 entries.
 
-> **Note:** the browser reports the score, so a determined player could submit a fake one with dev tools. That's normal for casual web games. To remove an entry, run `ZREM leaderboard "<name>"` in the Upstash console.
+> **Note:** the browser reports the score, so a determined player could submit a fake one with dev tools. That's normal for casual web games. To remove an entry, run `ZREM neend-toot-gayi:leaderboard "<name>"` in the Upstash console. The scores live under their own key, so this game can share an Upstash database with other games.
 
 ## Customising
 
