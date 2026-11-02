@@ -1,0 +1,19 @@
+{
+  "_help": "Put your own .mp3/.wav/.ogg clips in this folder and list them below. Several files per event play in turn (1, 2, 1, 2...). Empty list = built-in synth sound. \"music\" loops the first file listed instead of the built-in tune.",
+  "start": [],
+  "enemy": [],
+  "fire": [],
+  "hit": [
+    "hit.wav"
+  ],
+  "miss": [
+    "miss.wav"
+  ],
+  "combo": [],
+  "hurt": [
+    "life-lost.mp3"
+  ],
+  "over": [],
+  "music": [],
+  "power": []
+}
