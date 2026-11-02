@@ -43,6 +43,28 @@
   .ghost { margin-top:14px; font:700 22px 'Gaegu'; padding:6px 26px; border:3px solid var(--ink); border-radius:40px; background:#fff; color:var(--ink); cursor:pointer; box-shadow:0 4px 0 var(--ink); }
   .ghost:active { transform:translateY(3px); box-shadow:0 1px 0 var(--ink); }
   .ghost[hidden] { display:none; }
+  .hidden { display:none !important; }
+  #lbModal { z-index:20; background:rgba(29,29,29,.35); }
+  .card { width:min(360px,100%); max-height:88vh; overflow-y:auto; background:#fff; border:3px solid var(--ink); border-radius:18px; box-shadow:5px 5px 0 var(--yellow); padding:16px 18px; text-align:left; font-size:20px; }
+  .card h2 { margin:0 0 8px; text-align:center; font-size:40px; line-height:1; text-shadow:3px 3px 0 var(--yellow); }
+  .card .sub { margin:0 0 10px; text-align:center; }
+  .card .err { margin:4px 0 0; min-height:22px; color:var(--red); text-align:center; font-size:18px; }
+  #nameInput { width:100%; padding:8px 12px; font:700 22px 'Gaegu'; border:3px solid var(--ink); border-radius:12px; outline:none; color:var(--ink); background:#fffbe6; user-select:text; -webkit-user-select:text; }
+  #nameInput:focus { box-shadow:0 0 0 3px var(--yellow); }
+  .card .row { display:flex; gap:10px; justify-content:center; margin-top:12px; }
+  .card .row button { flex:1; margin:0; }
+  .play.small { font-size:24px; padding:6px 18px; }
+  .play:disabled { opacity:.6; }
+  #boardList { list-style:none; margin:0; padding:0; counter-reset:rank; }
+  #boardList li { counter-increment:rank; display:flex; align-items:center; gap:8px; padding:4px 10px; border-radius:8px; font-size:22px; line-height:1.2; }
+  #boardList li:nth-child(odd) { background:#f4f1ea; }
+  #boardList li::before { content:counter(rank) '.'; width:28px; text-align:right; font-weight:700; }
+  #boardList li:nth-child(1)::before { content:'🥇'; }
+  #boardList li:nth-child(2)::before { content:'🥈'; }
+  #boardList li:nth-child(3)::before { content:'🥉'; }
+  #boardList li.me { background:var(--yellow); }
+  #boardList .lb-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #boardList .lb-score { font-weight:700; }
   @keyframes wig { from{transform:rotate(-4deg)} to{transform:rotate(4deg)} }
 </style>
 </head>
@@ -62,6 +84,7 @@
   <h1>snooze blaster</h1>
   <div class="tag">endless stick shooter</div>
   <button class="play" id="playBtn">▶ PLAY</button>
+  <button class="ghost" id="boardBtn">🏆 Leaderboard</button>
   <button class="ghost" id="installBtn" hidden>📲 Add to home screen</button>
   <div class="howto">
     🎯 <b>Hold</b> the screen → aim line appears<br>
@@ -82,6 +105,28 @@
   <div class="score"><b id="finalScore">0</b>best <span id="finalBest">0</span></div>
   <button class="play" id="retryBtn">↻ BACK TO BED</button>
   <button class="ghost" id="shareBtn">📤 Share score</button>
+  <button class="ghost" id="overBoardBtn">🏆 Leaderboard</button>
+</div>
+
+<div id="lbModal" class="overlay hidden" role="dialog" aria-modal="true">
+  <div class="card">
+    <form id="nameForm" class="hidden">
+      <h2>top 10! 🏆</h2>
+      <p class="sub">You scored <b id="nfScore"></b>. Put your name on the leaderboard.</p>
+      <input id="nameInput" maxlength="16" autocomplete="nickname" placeholder="Your name" required>
+      <p class="err" id="nfError"></p>
+      <div class="row">
+        <button type="button" id="nfSkip" class="ghost">Skip</button>
+        <button type="submit" id="nfSubmit" class="play small">Submit</button>
+      </div>
+    </form>
+    <div id="boardView" class="hidden">
+      <h2>leaderboard</h2>
+      <ol id="boardList"></ol>
+      <p id="boardStatus" class="sub"></p>
+      <div class="row"><button type="button" id="boardClose" class="play small">Close</button></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -518,6 +563,7 @@ function gameOver() {
     $('finalBest').textContent = best;
     $('newBest').style.display = isBest && score > 0 ? 'block' : 'none';
     showUI();
+    if (qualifies(score)) askName(score, { onPlayAgain: start });
   }, 1200);
 }
 
@@ -855,6 +901,85 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ---------- leaderboard ----------
+// Global top 10 via /api/leaderboard (Vercel function + Upstash Redis), same flow as Tammy Bird.
+const TOP_N = 10, LB_API = '/api/leaderboard';
+let board = [], boardLoaded = false, onBoardClose = null, onNameSkip = null;
+const modal = $('lbModal'), nameForm = $('nameForm'), nameInput = $('nameInput'), boardView = $('boardView');
+
+async function refreshBoard() {
+  const res = await fetch(LB_API, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  board = (await res.json()).entries;
+  boardLoaded = true;
+  return board;
+}
+function qualifies(n) {
+  if (!boardLoaded || n <= 0) return false;
+  return board.length < TOP_N || n > board[board.length - 1].score;
+}
+const modalOpen = () => !modal.classList.contains('hidden');
+function showView(view) {
+  modal.classList.remove('hidden');
+  nameForm.classList.toggle('hidden', view !== 'name');
+  boardView.classList.toggle('hidden', view !== 'board');
+}
+function closeModal() { modal.classList.add('hidden'); document.activeElement?.blur(); }
+function renderBoard(highlight) {
+  $('boardList').replaceChildren(...board.map(({ name, score }) => {
+    const li = document.createElement('li');
+    if (highlight && name.toLowerCase() === highlight.toLowerCase()) li.className = 'me';
+    const n = document.createElement('span'); n.className = 'lb-name'; n.textContent = name;
+    const sc = document.createElement('span'); sc.className = 'lb-score'; sc.textContent = score;
+    li.append(n, sc);
+    return li;
+  }));
+  $('boardStatus').textContent = board.length ? '' : 'No scores yet. Be the first!';
+}
+async function showBoard({ highlight = store.get('sb_name', ''), buttonLabel = 'Close', onClose = null, fresh = true } = {}) {
+  onBoardClose = onClose;
+  $('boardClose').textContent = buttonLabel;
+  showView('board');
+  if (!fresh) return renderBoard(highlight);
+  $('boardList').replaceChildren();
+  $('boardStatus').textContent = 'Loading…';
+  try { await refreshBoard(); renderBoard(highlight); }
+  catch { $('boardStatus').textContent = "Couldn't load the leaderboard."; }
+}
+function askName(n, { onPlayAgain, onSkip }) {
+  onNameSkip = onSkip;
+  $('nfScore').textContent = n;
+  $('nfError').textContent = '';
+  $('nfSubmit').disabled = false;
+  nameInput.value = store.get('sb_name', '');
+  showView('name');
+  nameInput.focus(); nameInput.select();
+  nameForm.onsubmit = async e => {
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) return;
+    $('nfSubmit').disabled = true;
+    $('nfError').textContent = '';
+    try {
+      const res = await fetch(LB_API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, score: n }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      board = data.entries;
+      store.set('sb_name', name);
+      showBoard({ highlight: name, buttonLabel: 'Play again', onClose: onPlayAgain, fresh: false });
+    } catch (err) {
+      $('nfError').textContent = `Couldn't submit: ${err.message}`;
+      $('nfSubmit').disabled = false;
+    }
+  };
+}
+function skipName() { closeModal(); const cb = onNameSkip; onNameSkip = null; cb?.(); }
+function closeBoard() { closeModal(); const cb = onBoardClose; onBoardClose = null; cb?.(); }
+$('nfSkip').onclick = skipName;
+$('boardClose').onclick = closeBoard;
+$('boardBtn').onclick = () => showBoard();
+$('overBoardBtn').onclick = () => showBoard();
+
 // ---------- UI ----------
 function showUI() {
   $('menu').classList.toggle('hidden', state !== 'menu');
@@ -865,7 +990,7 @@ function showUI() {
   $('muteBtn').style.display = 'flex';
   $('muteBtn').textContent = muted ? '✕' : '♪';
 }
-function start() { audio(); stopVoice(); musicStop(); reset(); state = 'play'; showUI(); sfx.start(); musicStart(); }
+function start() { closeModal(); audio(); stopVoice(); musicStop(); reset(); state = 'play'; showUI(); sfx.start(); musicStart(); refreshBoard().catch(() => {}); }
 function pause() { if (state === 'play') { state = 'paused'; holding = false; try { ac && ac.suspend(); } catch {} showUI(); } }
 function resume() { if (state === 'paused') { state = 'play'; last = performance.now(); audio(); showUI(); } }
 
@@ -904,6 +1029,10 @@ cv.addEventListener('pointerdown', e => { e.preventDefault(); press(); });
 addEventListener('pointerup', release);
 addEventListener('pointercancel', () => { holding = false; });
 addEventListener('keydown', e => {
+  if (modalOpen()) {
+    if (e.key === 'Escape') nameForm.classList.contains('hidden') ? closeBoard() : skipName();
+    return;
+  }
   if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault();
     if (e.repeat) return;
@@ -912,7 +1041,7 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyP' || e.code === 'Escape') state === 'paused' ? resume() : pause();
 });
-addEventListener('keyup', e => { if (e.code === 'Space' || e.code === 'Enter') release(); });
+addEventListener('keyup', e => { if (!modalOpen() && (e.code === 'Space' || e.code === 'Enter')) release(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 

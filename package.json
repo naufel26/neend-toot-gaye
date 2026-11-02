@@ -1,0 +1,12 @@
+{
+  "name": "neend-toot-gayi",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.39.0"
+  }
+}
